@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+
+# Project specific
+backend/temp/*
+backend/output/*
+backend/slides_images/*
+!backend/temp/.gitkeep
+!backend/output/.gitkeep
+!backend/slides_images/.gitkeep
+
+# Environment variables
+.env
