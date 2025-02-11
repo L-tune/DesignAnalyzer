@@ -112,6 +112,21 @@
             </div>
         </div>
     </div>
+
+    <!-- Добавим блок для отображения контекста -->
+    <div class="uk-margin-medium-top uk-padding uk-background-muted">
+        <h3>Контекст презентации</h3>
+        <div id="context-info">
+            <div class="uk-margin">
+                <strong>Текущие темы:</strong>
+                <div id="current-themes">Пока не определены</div>
+            </div>
+            <div class="uk-margin">
+                <strong>Ключевые концепции:</strong>
+                <div id="key-concepts">Пока не определены</div>
+            </div>
+        </div>
+    </div>
 </main>
 
 <script>
@@ -181,7 +196,7 @@
             const resultsContainer = document.getElementById('results-container');
             resultsContainer.innerHTML = '';
             
-            data.results.forEach(result => {
+            data.forEach(result => {
                 const resultElement = document.createElement('div');
                 resultElement.className = 'uk-card uk-card-default uk-margin';
                 resultElement.innerHTML = `
@@ -254,7 +269,17 @@
                     throw new Error(data.error);
                 }
                 
-                displayResults(data);
+                console.log('Полученные данные:', data);
+                
+                if (data.results) {
+                    console.log('Результаты для отображения:', data.results);
+                    displayResults(data.results);
+                }
+                
+                if (data.context) {
+                    console.log('Контекст для обновления:', data.context);
+                    updateContext(data.context);
+                }
 
                 UIkit.notification({
                     message: 'Анализ завершен',
@@ -268,6 +293,25 @@
                 });
             });
         });
+
+        function updateContext(context) {
+            console.log('Обновление контекста:', context);
+            
+            const themesEl = document.getElementById('current-themes');
+            const conceptsEl = document.getElementById('key-concepts');
+            
+            if (context.current_themes && context.current_themes.length > 0) {
+                themesEl.textContent = context.current_themes.join(', ');
+            } else {
+                themesEl.textContent = 'Пока не определены';
+            }
+            
+            if (context.key_concepts && context.key_concepts.length > 0) {
+                conceptsEl.textContent = context.key_concepts.join(', ');
+            } else {
+                conceptsEl.textContent = 'Пока не определены';
+            }
+        }
     });
 </script>
 

@@ -90,56 +90,31 @@ def analyze_pdf():
         data = request.get_json()
         logger.debug(f"Полученные данные: {data}")
         
-        if not data:
-            logger.warning("Данные не получены")
-            return jsonify({'error': 'Данные не получены'}), 400
-            
         filepath = data.get('filepath', '')
         context = data.get('context', '')
-        logger.info(f"Анализируем файл: {filepath}")
-        logger.debug(f"Контекст: {context}")
         
-        if not filepath or not os.path.exists(filepath):
-            logger.warning(f"Файл не найден: {filepath}")
-            return jsonify({'error': 'Файл не найден'}), 404
-
-        # Используем методы классов
-        logger.info("Начинаем обработку PDF")
-        try:
-            images = pdf_processor.process_pdf(filepath)
-            logger.info(f"PDF успешно обработан, получено {len(images)} изображений")
-            logger.debug(f"Пути к изображениям: {images}")
-        except Exception as e:
-            logger.error(f"Ошибка при обработке PDF: {str(e)}", exc_info=True)
-            return jsonify({'error': 'Ошибка при обработке PDF'}), 500
+        # Обработка PDF
+        images = pdf_processor.process_pdf(filepath)
+        total_slides = len(images)
         
-        results = []
-        for idx, img in enumerate(images):
-            logger.info(f"Анализируем слайд {idx + 1}/{len(images)}")
-            try:
-                analysis = image_analyzer._analyze_single_slide(img)
-                logger.debug(f"Результат анализа слайда {idx + 1}: {analysis[:100]}...")
-                results.append({
-                    'slide_number': idx + 1,
-                    'analysis': analysis
-                })
-            except Exception as e:
-                logger.error(f"Ошибка при анализе слайда {idx + 1}: {str(e)}", exc_info=True)
-                return jsonify({'error': f'Ошибка при анализе слайда {idx + 1}'}), 500
-
-        logger.info("Анализ завершен успешно")
-        response_data = {
+        # Инициализируем контекст анализатора
+        image_analyzer.initialize_context(context, total_slides)
+        logger.info(f"Инициализирован контекст для {total_slides} слайдов")
+        
+        # Анализ слайдов
+        results = image_analyzer.analyze_slides(images)
+        
+        logger.debug(f"Отправляем результаты: {results}") # Добавим для отладки
+        
+        return jsonify({
             'success': True,
-            'results': results
-        }
-        logger.debug(f"Отправляем результаты: {str(response_data)[:200]}...")
-        return jsonify(response_data)
+            'results': results['slides_analysis'],
+            'context': results['context']
+        })
 
     except Exception as e:
         logger.error(f"Ошибка при анализе PDF: {str(e)}", exc_info=True)
-        return jsonify({
-            'error': str(e)
-        }), 500
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/test')
 def test_upload():
@@ -154,4 +129,4 @@ def serve_slide(filename):
 
 if __name__ == '__main__':
     logger.info("Запуск приложения")
-    app.run(debug=True) 
+    app.run(debug=True, port=5001) 
