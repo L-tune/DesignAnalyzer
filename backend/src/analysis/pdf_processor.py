@@ -4,7 +4,13 @@ from typing import List
 import pdf2image
 from PIL import Image
 import os
-from utils.config import config
+from backend.src.utils.config import config
+
+__all__ = ['process_pdf']
+
+def process_pdf(pdf_path):
+    processor = PDFProcessor()
+    return processor.process_pdf(pdf_path)
 
 class PDFProcessor:
     """

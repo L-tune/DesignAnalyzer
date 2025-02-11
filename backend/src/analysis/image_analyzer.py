@@ -3,7 +3,14 @@ from pathlib import Path
 from typing import List, Dict, Any
 import base64
 from openai import OpenAI
-from utils.config import config
+from backend.src.utils.config import config
+
+__all__ = ['analyze_image']
+
+def analyze_image(img, context):
+    analyzer = ImageAnalyzer()
+    # Предполагаю, что нужно вызвать метод analyze_single_slide
+    return analyzer._analyze_single_slide(img)
 
 class ImageAnalyzer:
     """
@@ -26,51 +33,49 @@ class ImageAnalyzer:
         }
     
     def analyze_slides(self, image_paths: List[Path]) -> Dict[str, Any]:
-        """
-        Анализ набора слайдов
-        
-        Args:
-            image_paths: Список путей к изображениям слайдов
-            
-        Returns:
-            Dict[str, Any]: Результаты анализа
-        """
+        """Анализ набора слайдов"""
         try:
             results = []
             for idx, image_path in enumerate(image_paths):
                 self.logger.info(f"Анализ слайда {idx + 1}/{len(image_paths)}")
                 slide_analysis = self._analyze_single_slide(image_path)
-                results.append(slide_analysis)
-                self._update_context(slide_analysis)
+                results.append({
+                    'slide_number': idx + 1,
+                    'analysis': slide_analysis
+                })
             
-            return self._generate_final_report(results)
+            return {
+                'slides_analysis': results,
+                'context': self.analysis_context
+            }
             
         except Exception as e:
             self.logger.error(f"Ошибка при анализе слайдов: {str(e)}")
             raise
     
-    def _analyze_single_slide(self, image_path: Path) -> Dict[str, Any]:
-        """Анализ отдельного слайда"""
+    def _analyze_single_slide(self, image_path: Path) -> str:
+        """Анализ одного слайда"""
         try:
-            # Кодируем изображение в base64
-            with open(image_path, "rb") as image_file:
-                encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+            self.logger.info(f"Начинаем анализ слайда: {image_path}")
             
-            # Формируем промпт с учетом контекста
-            prompt = self._generate_analysis_prompt()
+            # Читаем изображение и кодируем в base64
+            with open(image_path, 'rb') as img_file:
+                base64_image = base64.b64encode(img_file.read()).decode('utf-8')
             
-            # Отправляем запрос в OpenAI
+            self.logger.debug("Изображение успешно закодировано в base64")
+            
+            # Формируем запрос к API
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": prompt},
+                            {"type": "text", "text": "Проанализируйте этот слайд презентации и опишите его содержание, дизайн и возможные улучшения."},
                             {
                                 "type": "image_url",
                                 "image_url": {
-                                    "url": f"data:image/jpeg;base64,{encoded_image}"
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
                                 }
                             }
                         ]
@@ -79,12 +84,19 @@ class ImageAnalyzer:
                 max_tokens=self.max_tokens
             )
             
-            # Обрабатываем ответ
-            analysis_result = self._process_api_response(response)
-            return analysis_result
+            if not response.choices:
+                raise ValueError("Пустой ответ от API")
+            
+            analysis = response.choices[0].message.content
+            if not analysis:
+                raise ValueError("Пустой анализ от API")
+            
+            self.logger.debug(f"Получен ответ от API: {analysis[:100]}...")
+            
+            return analysis
             
         except Exception as e:
-            self.logger.error(f"Ошибка при анализе слайда {image_path}: {str(e)}")
+            self.logger.error(f"Ошибка при анализе слайда: {str(e)}", exc_info=True)
             raise
     
     def _generate_analysis_prompt(self) -> str:
