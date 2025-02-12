@@ -31,6 +31,9 @@ class ImageAnalyzer:
             'current_themes': set(),    # Текущие темы презентации
             'key_concepts': set()       # Ключевые концепции
         }
+        
+        # Добавляем атрибут для хранения текущих изображений
+        self.current_images = []
     
     def initialize_context(self, context: str, total_slides: int):
         """Инициализация контекста презентации"""
@@ -41,26 +44,33 @@ class ImageAnalyzer:
         self.logger.info(f"Инициализирован контекст презентации. Всего слайдов: {total_slides}")
     
     def _analyze_single_slide(self, image_path: Path, slide_number: int) -> str:
-        """
-        Анализ одного слайда с учетом контекста
-        
-        Args:
-            image_path: Путь к изображению слайда
-            slide_number: Номер текущего слайда
-        
-        Returns:
-            str: Результат анализа слайда
-        """
+        """Анализ одного слайда с учетом контекста"""
         try:
-            self.logger.info(f"Начинаем анализ слайда {slide_number}/{self.presentation_context['total_slides']}")
+            self.logger.info(f"Начинаем анализ слайда {slide_number}")
             
             # Кодируем изображение в base64
             with open(image_path, 'rb') as img_file:
                 base64_image = base64.b64encode(img_file.read()).decode('utf-8')
             
             # Формируем промпт с учетом контекста
-            prompt = self._generate_analysis_prompt(slide_number)
-            
+            context = self.presentation_context['general_context'] or "общая аудитория"
+            prompt = f"""Вы объясняете содержимое слайда для следующей аудитории: {context}
+
+Проанализируйте слайд {slide_number} из {self.presentation_context['total_slides']}.
+
+Используйте язык и термины, понятные указанной аудитории. Ответ дайте строго в следующем формате:
+
+СУТЬ
+Краткое и понятное описание того, что показано на слайде.
+
+ТЕЗИСЫ
+- Первый важный момент
+- Второй важный момент
+- Третий важный момент
+
+АКЦЕНТЫ
+Ключевые слова через запятую. Важные слова выделите тегами <blue>слово</blue>."""
+
             # Запрос к API
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -88,9 +98,6 @@ class ImageAnalyzer:
             if not analysis:
                 raise ValueError("Пустой анализ от API")
             
-            # Обновляем контекст на основе анализа
-            self._update_context_from_analysis(analysis)
-            
             return analysis
             
         except Exception as e:
@@ -103,14 +110,24 @@ class ImageAnalyzer:
         return f"""Проанализируйте слайд {slide_number} из {context['total_slides']}.
 Контекст аудитории: {context['general_context']}
 
-Опишите, что показано на слайде, точно отражая уровень понимания и интересы указанной аудитории. 
-Используйте их язык, их способ мышления и то, что им важно.
+Представьте анализ в следующем формате:
+
+СУТЬ
+Краткое описание главной идеи слайда в 2-3 предложениях.
+
+ТЕЗИСЫ
+- Первый ключевой тезис
+- Второй ключевой тезис
+- Третий ключевой тезис
+
+АКЦЕНТЫ
+Ключевые слова и фразы для презентации, разделенные запятыми. Самые важные слова выделить (!) восклицательным знаком.
 
 Важно:
-- Полностью адаптировать стиль под реальный язык этой аудитории
-- Фокусироваться на том, что им действительно интересно и понятно
-- Говорить на их языке, используя их выражения
-- Отражать их реальные приоритеты и ценности"""
+- Строго соблюдать структуру разделов
+- Использовать четкие и лаконичные формулировки
+- Выделять ключевые слова знаком (!)
+- Адаптировать язык под аудиторию"""
 
     def _update_context_from_analysis(self, analysis: str):
         """Обновление контекста на основе анализа слайда"""
@@ -168,16 +185,45 @@ class ImageAnalyzer:
     def analyze_slides(self, image_paths: List[Path]) -> Dict[str, Any]:
         """Анализ набора слайдов"""
         try:
+            # Сохраняем текущие изображения
+            self.current_images = image_paths
+            self.logger.info(f"Начинаем анализ {len(image_paths)} слайдов")
+            
             results = []
             for idx, image_path in enumerate(image_paths, 1):
-                self.logger.info(f"Анализ слайда {idx}/{len(image_paths)}")
-                slide_analysis = self._analyze_single_slide(image_path, idx)
-                results.append({
-                    'slide_number': idx,
-                    'analysis': slide_analysis
-                })
+                self.logger.info(f"Обработка слайда {idx}/{len(image_paths)}: {image_path}")
+                try:
+                    slide_analysis = self._analyze_single_slide(image_path, idx)
+                    self.logger.info(f"Получен анализ для слайда {idx}: {slide_analysis[:100]}...")
+                    
+                    results.append({
+                        'slide_number': idx,
+                        'analysis': slide_analysis
+                    })
+                except Exception as e:
+                    self.logger.error(f"Ошибка при анализе слайда {idx}: {str(e)}")
+                    # Добавляем заглушку для сохранения нумерации
+                    results.append({
+                        'slide_number': idx,
+                        'analysis': f"""
+СУТЬ
+Ошибка при анализе слайда
+
+ТЕЗИСЫ
+- Не удалось проанализировать слайд
+- Пожалуйста, попробуйте повторить анализ
+
+АКЦЕНТЫ
+ошибка (!), повторить анализ (!)
+"""
+                    })
             
-            # Конвертируем множества в списки для JSON
+            self.logger.info(f"Завершен анализ всех слайдов. Всего результатов: {len(results)}")
+            
+            # Проверяем, что количество результатов совпадает с количеством слайдов
+            if len(results) != len(image_paths):
+                self.logger.error(f"Несоответствие количества результатов ({len(results)}) и слайдов ({len(image_paths)})")
+            
             context_for_json = {
                 'general_context': self.presentation_context['general_context'],
                 'total_slides': self.presentation_context['total_slides'],
@@ -191,7 +237,7 @@ class ImageAnalyzer:
             }
             
         except Exception as e:
-            self.logger.error(f"Ошибка при анализе слайдов: {str(e)}")
+            self.logger.error(f"Критическая ошибка при анализе слайдов: {str(e)}", exc_info=True)
             raise
     
     def _process_api_response(self, response) -> Dict[str, Any]:
@@ -218,4 +264,58 @@ class ImageAnalyzer:
             "slides_analysis": results,
             "context": self.presentation_context,
             # TODO: Добавить общие выводы и рекомендации
-        } 
+        }
+    
+    def get_current_images(self) -> List[Path]:
+        """Получение текущего набора обрабатываемых изображений"""
+        return self.current_images
+
+    def analyze_image(self, image_path):
+        try:
+            self.logger.info(f"Анализ изображения: {image_path}")
+            
+            # Загружаем изображение
+            with open(image_path, 'rb') as img_file:
+                image_data = base64.b64encode(img_file.read()).decode('utf-8')
+            
+            # Формируем запрос к API в правильном формате
+            messages = [
+                {"role": "system", "content": "Вы - эксперт по анализу дизайна и визуальных материалов."},
+                {"role": "user", "content": [
+                    {"type": "text", "text": """Проанализируйте этот слайд и опишите его содержание в следующем формате:
+
+СУТЬ
+Краткое описание того, что показано на слайде.
+
+ТЕЗИСЫ
+- Первый важный момент
+- Второй важный момент
+- Третий важный момент
+
+АКЦЕНТЫ
+Ключевые слова через запятую"""},
+                    {"type": "image_url", 
+                     "image_url": {
+                         "url": f"data:image/png;base64,{image_data}",
+                         "detail": "high"
+                     }
+                    }
+                ]}
+            ]
+            
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=self.max_tokens
+            )
+            
+            analysis = response.choices[0].message.content
+            if analysis:
+                self.logger.info(f"Получен анализ длиной {len(analysis)} символов")
+            else:
+                self.logger.warning("Получен пустой анализ")
+            return analysis
+            
+        except Exception as e:
+            self.logger.error(f"Ошибка при анализе изображения: {str(e)}")
+            return None 
